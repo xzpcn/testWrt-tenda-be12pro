@@ -5,6 +5,11 @@
 # 1. 彻底清除前人在 feeds.conf.default 中遗留的冲突残留行（防止再次报第 11 或 13 行错误）
 sed -i '/luci-app-temp-status/d' feeds.conf.default
 sed -i '/temp-status/d' feeds.conf.default
+# Add third-party feeds
+cat >> feeds.conf.default << 'EOF'
+src-git kenzo https://github.com/kenzok8/openwrt-packages
+src-git small https://github.com/kenzok8/small
+EOF
 
 # 2. 正常添加符合 Feeds 规范的 kenzok8 dae/daed 源
 if ! grep -q "openwrt-daede" feeds.conf.default; then
