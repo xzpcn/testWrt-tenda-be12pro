@@ -93,7 +93,7 @@ jobs:
       run: |
         git clone --depth=1 -b ${{ github.event.inputs.istore_branch || 'main' }} \
           https://github.com/istoreos/istore.git /tmp/istore
-        cp -r /tmp/istore/luci-app-store package/
+        cp -r /tmp/istore/luci package/
 
     - name: 自定义 feeds (diy-part1, 加 daed 源)
       run: |
