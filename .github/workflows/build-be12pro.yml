@@ -91,7 +91,7 @@ jobs:
     - name: Clone istore
       working-directory: openwrt
       run: |
-        git clone --depth=1 -b ${{ github.event.inputs.istore_branch || 'master' }} \
+        git clone --depth=1 -b ${{ github.event.inputs.istore_branch || 'main' }} \
           https://github.com/istoreos/istore.git /tmp/istore
         cp -r /tmp/istore/luci-app-store package/
 
