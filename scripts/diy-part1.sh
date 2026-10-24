@@ -9,7 +9,7 @@ sed -i '/temp-status/d' feeds.conf.default
 cat >> feeds.conf.default << 'EOF'
 src-git kenzo https://github.com/kenzok8/openwrt-packages
 src-git small https://github.com/kenzok8/small
-#EOF
+EOF
 
 # 2. 正常添加符合 Feeds 规范的 kenzok8 dae/daed 源
 if ! grep -q "openwrt-daede" feeds.conf.default; then
