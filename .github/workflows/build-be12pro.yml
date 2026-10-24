@@ -92,7 +92,10 @@ jobs:
       run: |
         chmod +x $DIY_P1_SH
         cd openwrt
-        ../$DIY_P1_SH
+        ../$DIY_P1_SH       
+        # 1. 彻底清除可能存在的温度组件残留，防止 feeds 撞车重名
+        sed -i '/luci-app-temp-status/d' feeds.conf.default
+        sed -i '/temp-status/d' feeds.conf.default
         # === 加入 iStore 软件中心官方源配置 ===
         echo >> feeds.conf.default
         echo 'src-git istore https://github.com/linkease/istore;main' >> feeds.conf.default
@@ -118,7 +121,10 @@ jobs:
         echo "CONFIG_PACKAGE_luci-app-store=y" >> .config
         echo "CONFIG_PACKAGE_luci-compat=y" >> .config
         echo "CONFIG_PACKAGE_luci-app-temp-status=y" >> .config
+        echo "CONFIG_PACKAGE_luci-app-ttyd=y" >> .config
         echo "CONFIG_PACKAGE_luci-i18n-ttyd-zh-cn=y" >> .config
+        # 补全第三方库可能需要的底层中文翻译核心依赖，防止被 defconfig 剔除
+        echo "CONFIG_LUCI_LANG_zh_Hans=y" >> .config
         make defconfig
         echo "===== 生效的关键配置 ====="
         grep -E "tenda_be12-pro|TARGET_mediatek|BPF_TOOLCHAIN|DEVEL=|PACKAGE_(dae|daed|luci-app-daede)|KERNEL_DEBUG_INFO|KERNEL_BPF_EVENTS|KERNEL_XDP_SOCKETS|v2ray-geo|vmlinux-btf|kmod-sched-bpf|kmod-veth" .config || true
