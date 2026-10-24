@@ -92,18 +92,8 @@ jobs:
       run: |
         chmod +x $DIY_P1_SH
         cd openwrt
-        ../$DIY_P1_SH       
-        # 1. 彻底清除可能存在的温度组件残留，防止 feeds 撞车重名
-        sed -i '/luci-app-temp-status/d' feeds.conf.default
-        sed -i '/temp-status/d' feeds.conf.default
-        # === 加入 iStore 软件中心官方源配置 ===
-        echo >> feeds.conf.default
-        echo 'src-git istore https://github.com/linkease/istore;main' >> feeds.conf.default
-        echo "src-git kenzo https://github.com/kenzok8/openwrt-packages" >> feeds.conf.default
-        echo "src-git small https://github.com/kenzok8/small" >> feeds.conf.default
-        ./scripts/feeds update istore
-        ./scripts/feeds install -d y -p istore luci-app-store
-
+        ../$DIY_P1_SH
+        
     - name: 更新并安装 feeds
       run: |
         cd openwrt
@@ -117,14 +107,6 @@ jobs:
         ../$DIY_P2_SH
         rm -f .config
         cp ../$CONFIG_FILE .config
-        # === 【关键补充】强行将 iStore 写入 .config，防止被 diy-part2 或老配置覆盖 ===
-        echo "CONFIG_PACKAGE_luci-app-store=y" >> .config
-        echo "CONFIG_PACKAGE_luci-compat=y" >> .config
-        echo "CONFIG_PACKAGE_luci-app-temp-status=y" >> .config
-        echo "CONFIG_PACKAGE_luci-app-ttyd=y" >> .config
-        echo "CONFIG_PACKAGE_luci-i18n-ttyd-zh-cn=y" >> .config
-        # 补全第三方库可能需要的底层中文翻译核心依赖，防止被 defconfig 剔除
-        echo "CONFIG_LUCI_LANG_zh_Hans=y" >> .config
         make defconfig
         echo "===== 生效的关键配置 ====="
         grep -E "tenda_be12-pro|TARGET_mediatek|BPF_TOOLCHAIN|DEVEL=|PACKAGE_(dae|daed|luci-app-daede)|KERNEL_DEBUG_INFO|KERNEL_BPF_EVENTS|KERNEL_XDP_SOCKETS|v2ray-geo|vmlinux-btf|kmod-sched-bpf|kmod-veth" .config || true
@@ -143,7 +125,7 @@ jobs:
         check "^CONFIG_PACKAGE_luci-app-ttyd=y"
         check "^CONFIG_PACKAGE_luci-i18n-ttyd-zh-cn=y"
         check "^CONFIG_PACKAGE_luci-app-temp-status=y"
-        check "^CONFIG_PACKAGE_luci-app-store=y"
+        #check "^CONFIG_PACKAGE_luci-app-store=y"
         check "^CONFIG_PACKAGE_luci-compat=y"
         check "^CONFIG_PACKAGE_dae=y"
         check "^CONFIG_PACKAGE_daed=y"
