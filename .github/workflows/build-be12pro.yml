@@ -88,18 +88,15 @@ jobs:
         git clone --depth 1 --branch $REPO_BRANCH $REPO_URL openwrt
         ls -lh openwrt/ | head -30
 
-    - name: Clone istore
-      working-directory: openwrt
-      run: |
-        git clone --depth=1 -b ${{ github.event.inputs.istore_branch || 'main' }} \
-          https://github.com/istoreos/istore.git /tmp/istore
-        cp -r /tmp/istore/luci package/
-
     - name: 自定义 feeds (diy-part1, 加 daed 源)
       run: |
         chmod +x $DIY_P1_SH
         cd openwrt
         ../$DIY_P1_SH
+        echo >> feeds.conf.default
+        echo 'src-git istore https://github.com/linkease/istore;main' >> feeds.conf.default
+        ./scripts/feeds update istore
+        ./scripts/feeds install -d y -p istore luci-app-store
 
     - name: 更新并安装 feeds
       run: |
