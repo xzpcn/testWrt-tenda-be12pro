@@ -114,6 +114,7 @@ jobs:
         cp ../$CONFIG_FILE .config
         # === 【关键补充】强行将 iStore 写入 .config，防止被 diy-part2 或老配置覆盖 ===
         echo "CONFIG_PACKAGE_luci-app-store=y" >> .config
+        echo "CONFIG_PACKAGE_luci-compat=y" >> .config
         make defconfig
         echo "===== 生效的关键配置 ====="
         grep -E "tenda_be12-pro|TARGET_mediatek|BPF_TOOLCHAIN|DEVEL=|PACKAGE_(dae|daed|luci-app-daede)|KERNEL_DEBUG_INFO|KERNEL_BPF_EVENTS|KERNEL_XDP_SOCKETS|v2ray-geo|vmlinux-btf|kmod-sched-bpf|kmod-veth" .config || true
@@ -133,6 +134,7 @@ jobs:
         check "^CONFIG_PACKAGE_luci-i18n-ttyd-zh-cn=y"
         check "^CONFIG_PACKAGE_luci-app-temp-status=y"
         check "^CONFIG_PACKAGE_luci-app-store=y"
+        check "^CONFIG_PACKAGE_luci-compat=y"
         check "^CONFIG_PACKAGE_dae=y"
         check "^CONFIG_PACKAGE_daed=y"
         check "^CONFIG_PACKAGE_luci-app-daede=y"
@@ -165,7 +167,9 @@ jobs:
         mkdir -p ../firmware
         # 保留 Tenda BE12 Pro 相关固件 + dae/daed 包
         find bin/targets/mediatek/filogic/ -type f \( -name "*tenda_be12-pro*" -o -name "*.manifest" -o -name "config.buildinfo" \) -exec cp -v {} ../firmware/ \;
-        find bin/packages/ -type f \( -name "dae_*" -o -name "daed_*" -o -name "luci-app-daede*" -o -name "luci-i18n-daede*" -o -name "vmlinux-btf*" -o -name "v2ray-geo*" \) 2>/dev/null -exec cp -v {} ../firmware/ \; || true
+        find bin/packages/ -type f \( -name "dae_*" -o -name "daed_*" -o -name "luci-app-daede*" -o \
+        -name "luci-i18n-daede*" -o -name "vmlinux-btf*" -o -name "v2ray-geo*" -o \
+        -name "*luci-app-store*" -o -name "*luci-compat*" \) 2>/dev/null -exec cp -v {} ../firmware/ \; || true
         ls -lh ../firmware/
 
     - name: 上传固件到 Artifact
