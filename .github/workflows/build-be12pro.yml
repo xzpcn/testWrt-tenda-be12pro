@@ -100,6 +100,11 @@ jobs:
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
+    - name: Fix daed Golang Version Requirement
+      run: |
+         find feeds/daede/daed/ -name "go.mod" -exec sed -i 's/go 1.26.10/go 1.26.3/g' {} \;
+
+
     - name: 自定义配置 (diy-part2)
       run: |
         chmod +x $DIY_P2_SH
