@@ -102,7 +102,8 @@ fi
 
 # 5. 确保 golang 版本足够新 (dae 需要 go 1.21+), feeds 自带一般够, 这里只打印确认
 ./scripts/feeds list | grep -E "^(dae|daed|luci-app-daede|vmlinux-btf|v2ray-geo)" || echo "WARN: dae 相关 feed 未列出, 请检查 diy-part1 是否生效"
-
+# 强行将 daed 源码及子模块中要求的 Go 最低版本从 1.26.10 降级为 1.26.3
+find feeds/daede/daed/ -name "go.mod" -exec sed -i 's/go 1.26.10/go 1.26.3/g' {} \;
 
 # 6. 浏览器标签页标题 + 登录窗口大标题 (fanchmwrt 主题硬编码 FanchmWrt, 与 hostname 无关)
 sed -i 's|<title>FanchmWrt</title>|<title>NatserverWrt</title>|' package/fcm/luci-theme-fanchmwrt/ucode/template/themes/fanchmwrt/header.ut
