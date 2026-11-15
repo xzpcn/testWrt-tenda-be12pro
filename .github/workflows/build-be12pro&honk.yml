@@ -222,7 +222,14 @@ jobs:
         find bin/targets/mediatek/filogic/ -type f \( -name "*tenda_be12-pro*" -o -name "*.manifest" -o -name "config.buildinfo" \) -exec cp -v {} ../firmware/ \;
         find bin/packages/ -type f \( -name "honk_*" -o -name "luci-app-honk*" -o \
         -name "luci-lib-daeuniverse*" -o -name "luci-i18n-daeuniverse*" -o -name "vmlinux-btf*" -o -name "v2ray-geo*" \) 2>/dev/null -exec cp -v {} ../firmware/ \; || true
-        ls -lh ../firmware/
+        # 发布名加 -honk 后缀。只动文件名: 设备名不能改, SUPPORTED_DEVICES 是由设备名
+        # 派生的 (include/image.mk:551), 改名会让 sysupgrade 的兼容性校验失败。
+        cd ../firmware
+        for f in *tenda_be12-pro*; do
+          [ -e "$f" ] || continue
+          mv -v "$f" "${f/tenda_be12-pro/tenda_be12-pro-honk}"
+        done
+        ls -lh
 
     - name: 上传固件到 Artifact
       uses: actions/upload-artifact@v4
