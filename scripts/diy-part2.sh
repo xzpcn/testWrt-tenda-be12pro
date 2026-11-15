@@ -100,8 +100,54 @@ if [ -f package/base-files/files/etc/openwrt_release ]; then
   echo "DISTRIB_DESCRIPTION='NatserverWrt snapshot + daed (Tenda BE12 Pro)'" >> package/base-files/files/etc/openwrt_release
 fi
 
-# 5. 确保 golang 版本足够新 (dae 需要 go 1.21+), feeds 自带一般够, 这里只打印确认
-./scripts/feeds list | grep -E "^(dae|daed|luci-app-daede|vmlinux-btf|v2ray-geo)" || echo "WARN: dae 相关 feed 未列出, 请检查 diy-part1 是否生效"
+# 5. 确保 golang 版本足够新: dae 上游 2026-10-30 (daeuniverse/dae#1155 "move to
+#    Go 1.27") 把 go.mod 提到 go 1.27.0, 而 fanchmwrt-snapshot 的 packages feed
+#    钉在一个只有 golang1.26 的提交上, 且 feed 的 golang-package.mk 写死
+#    GOTOOLCHAIN=local (不允许 go 命令自己下工具链), 编译必报:
+#      go: go.mod requires go >= 1.27.0 (running go 1.26.3; GOTOOLCHAIN=local)
+#    修法: 把 openwrt/packages master 的 golang1.27 包定义拷进 feed (与 feed 自带
+#    的 golang1.26 同构, 复用同一套 ../golang-*.mk, 引导仍用 feed 的 golang-bootstrap
+#    1.24.13, Go 1.27 只要求 >= 1.24.6), 再让 dae/daed 显式依赖 golang1.27/host。
+#    feed 若哪天自带 1.27 或默认版本升级, 下面整段自动跳过。
+#    dae 以后要求 1.28 时: 在仓库根目录放 golang1.28-Makefile (从 openwrt/packages
+#    取对应 Makefile), 并把下面的 GO_WANT 改成 1.28。
+GO_WANT=1.27
+GO_FEED_DIR=feeds/packages/lang/golang
+GO_SRC_FILE="../golang$GO_WANT-Makefile"
+GO_DEFAULT_MINOR=$(sed -n 's/^GO_DEFAULT_VERSION:=1\.\([0-9][0-9]*\)$/\1/p' \
+  "$GO_FEED_DIR/golang-values.mk" 2>/dev/null | head -1)
+[ -n "$GO_DEFAULT_MINOR" ] || GO_DEFAULT_MINOR=0
+echo "===== Go 工具链: packages feed 默认 1.$GO_DEFAULT_MINOR, dae/daed 需要 $GO_WANT ====="
+
+if [ "$GO_DEFAULT_MINOR" -lt "${GO_WANT#1.}" ]; then
+  if [ ! -f "$GO_FEED_DIR/golang$GO_WANT/Makefile" ]; then
+    mkdir -p "$GO_FEED_DIR/golang$GO_WANT"
+    cp "$GO_SRC_FILE" "$GO_FEED_DIR/golang$GO_WANT/Makefile" || {
+      echo "ERROR: 找不到 $GO_SRC_FILE (仓库根目录的 golang$GO_WANT-Makefile)" >&2
+      exit 1
+    }
+  fi
+  # feeds install -a 之前已跑过, 新目录要单独注册成 package/feeds/packages 下的软链
+  ./scripts/feeds install "golang$GO_WANT" || echo "WARN: scripts/feeds install 没收录 golang$GO_WANT, 改用手工软链"
+  if [ ! -e "package/feeds/packages/golang$GO_WANT" ]; then
+    mkdir -p package/feeds/packages
+    ln -sfn "../../../feeds/packages/lang/golang/golang$GO_WANT" \
+      "package/feeds/packages/golang$GO_WANT"
+  fi
+  for p in dae daed; do
+    f="feeds/daede/$p/Makefile"
+    [ -f "$f" ] || continue
+    sed -i "s|^PKG_BUILD_DEPENDS:=golang/host|PKG_BUILD_DEPENDS:=golang$GO_WANT/host|" "$f"
+    grep -q "golang$GO_WANT/host" "$f" || {
+      echo "ERROR: $p 未切到 golang$GO_WANT/host, 检查 feed 里 PKG_BUILD_DEPENDS 写法" >&2
+      exit 1
+    }
+  done
+  echo "OK: dae/daed 使用 host 端 go $GO_WANT"
+fi
+
+./scripts/feeds list | grep -E "^(dae|daed|luci-app-daede|vmlinux-btf|v2ray-geo|golang)" \
+  || echo "WARN: dae 相关 feed 未列出, 请检查 diy-part1 是否生效"
 
 # 6. 浏览器标签页标题 + 登录窗口大标题 (fanchmwrt 主题硬编码 FanchmWrt, 与 hostname 无关)
 sed -i 's|<title>FanchmWrt</title>|<title>NatserverWrt</title>|' package/fcm/luci-theme-fanchmwrt/ucode/template/themes/fanchmwrt/header.ut
