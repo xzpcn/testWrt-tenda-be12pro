@@ -1,0 +1,247 @@
+name: Build FanchmWrt Tenda BE12 Pro + honk
+
+on:
+  # 手动触发 (仅测试/紧急用); 正常只由 schedule 在上游有更新时自动构建
+  workflow_dispatch:
+  # 每天检查一次上游是否有新提交 (UTC 00:20 = 北京 08:20); 无更新时 check 直接跳过, 不会构建
+  schedule:
+    - cron: '20 0 * * *'
+
+env:
+  REPO_URL: https://github.com/fanchmwrt/fanchmwrt-snapshot.git
+  REPO_BRANCH: fanchmwrt-26.05
+  CONFIG_FILE: config/tenda-be12-pro-honk.config
+  DIY_P1_SH: scripts/honk-diy-part1.sh
+  DIY_P2_SH: scripts/honk-diy-part2.sh
+  # honk 的 build.sh 只支持 x86_64 与 aarch64, 别的 arch 直接报错退出
+  HONK_RUST_TARGET: aarch64-unknown-linux-musl
+  TZ: Asia/Shanghai
+
+permissions:
+  contents: write
+
+jobs:
+  # 检查上游 fanchmwrt-snapshot 是否有新提交
+  check:
+    runs-on: ubuntu-22.04
+    outputs:
+      build: ${{ steps.check.outputs.build }}
+      upstream: ${{ steps.check.outputs.upstream }}
+      tag: ${{ steps.check.outputs.tag }}
+    steps:
+    - name: 检查上游更新
+      id: check
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        set -eu
+        UP=$(git ls-remote "$REPO_URL" "refs/heads/$REPO_BRANCH" | head -1 | cut -f1)
+        SHORT="${UP:0:7}"
+        TAG="tenda-be12-pro-v$(date -u +%Y%m%d)-${SHORT}"
+        BUILD=true
+        if [ "${{ github.event_name }}" = "schedule" ]; then
+          if gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[] | (.tag_name, .name, .body)' | grep -q "$SHORT"; then
+            BUILD=false
+            echo "上游 $SHORT 已有对应发行版, 跳过本次构建"
+          else
+            echo "检测到上游更新: $UP"
+          fi
+        fi
+        echo "upstream=$UP" >> "$GITHUB_OUTPUT"
+        echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+        echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+        echo "build=$BUILD tag=$TAG upstream=$UP"
+
+  build:
+    needs: check
+    if: needs.check.outputs.build == 'true'
+
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout 本仓库(工作流+配置)
+      uses: actions/checkout@v4
+
+    - name: 初始化编译环境
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        # 彻底释放 runner 磁盘 (保留 clang/node/runner 本体)
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/powershell \
+          /usr/local/share/swift /usr/local/share/edge_driver /opt/hostedtoolcache \
+          /usr/local/lib/node_modules /usr/local/typescript /usr/local/go /home/linuxbrew \
+          /usr/local/.cache /etc/apt/sources.list.d/*
+        sudo docker image prune --all --force 2>/dev/null || true
+        sudo -E apt-get -qq update
+        sudo -E apt-get -qq install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
+          bzip2 ccache clang cmake cpio curl bash device-tree-compiler ecj fastjar flex gawk gettext git gperf haveged \
+          help2man intltool libacl1-dev libattr1-dev libbpf-dev libclang-dev libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev \
+          libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev \
+          libtool libz-dev lld llvm lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf \
+          python3 python3-pip python3-ply python3-docutils qemu-utils rsync squashfs-tools subversion \
+          swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd yasm zlib1g-dev zstd
+        sudo -E apt-get -qq autoremove --purge
+        sudo -E apt-get -qq clean
+        sudo timedatectl set-timezone "$TZ"
+        df -h
+
+    - name: 克隆 fanchmwrt-snapshot 源码
+      run: |
+        git clone --depth 1 --branch $REPO_BRANCH $REPO_URL openwrt
+        ls -lh openwrt/ | head -30
+
+    - name: 自定义 feeds (honk-diy-part1, 加 honk 官方源)
+      run: |
+        chmod +x $DIY_P1_SH
+        cd openwrt
+        ../$DIY_P1_SH
+        
+    - name: 更新并安装 feeds
+      run: |
+        cd openwrt
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+
+    - name: 自定义配置 (honk-diy-part2)
+      run: |
+        chmod +x $DIY_P2_SH
+        cd openwrt
+        ../$DIY_P2_SH
+        # 内核版本硬校验: honk 要求 Linux >= 6.12 (compiled routing 依赖同步
+        # map-in-map 发布, 老内核它会在 attach 前直接拒绝), 上游退回 6.6 的话
+        # 这里先拦住, 不然要等 make 跑到最后才知道
+        KVER=$(sed -n 's/^KERNEL_PATCHVER:=\([0-9.]*\).*/\1/p' target/linux/mediatek/Makefile | head -1)
+        awk -v v="${KVER:-0}" 'BEGIN { split(v, a, "."); exit (a[1] > 6 || (a[1] == 6 && a[2] >= 12)) ? 0 : 1 }' \
+          || { echo "ERROR: mediatek 内核 ${KVER:-未知} < 6.12, honk 数据面起不来"; exit 1; }
+        echo "OK: mediatek 内核 $KVER, honk 可用"
+        rm -f .config
+        cp ../$CONFIG_FILE .config
+        make defconfig
+        echo "===== 生效的关键配置 ====="
+        grep -E "tenda_be12-pro|TARGET_mediatek|BPF_TOOLCHAIN|DEVEL=|PACKAGE_(honk|luci-app-honk|luci-lib-daeuniverse|luci-i18n-daeuniverse)|KERNEL_DEBUG_INFO|KERNEL_BPF|KERNEL_CGROUP|v2ray-geo|vmlinux-btf|kmod-sched|kmod-veth|kmod-nft-queue|kmod-nfnetlink-queue|libstdcpp" .config || true
+        echo "===== 主机 clang (BPF_TOOLCHAIN_HOST 要 >=12) ====="
+        which clang llc opt llvm-strip; clang --version | head -2
+        echo "===== defconfig 后硬检查 ====="
+        fail=0
+        check() { if ! grep -q "$1" .config; then echo "FAIL: $1"; fail=1; else echo "OK: $1"; fi; }
+        check "^CONFIG_TARGET_mediatek=y"
+        check "^CONFIG_TARGET_mediatek_filogic=y"
+        check "^CONFIG_TARGET_mediatek_filogic_DEVICE_tenda_be12-pro=y"
+        check "^CONFIG_DEVEL=y"
+        check "^CONFIG_BPF_TOOLCHAIN_HOST=y"
+        check "^CONFIG_KERNEL_DEBUG_INFO=y"
+        check "^CONFIG_KERNEL_DEBUG_INFO_BTF=y"
+        check "^CONFIG_KERNEL_CGROUP_BPF=y"
+        check "^CONFIG_PACKAGE_luci-app-ttyd=y"
+        check "^CONFIG_PACKAGE_luci-i18n-ttyd-zh-cn=y"
+        check "^CONFIG_PACKAGE_luci-app-temp-status=y"
+        #check "^CONFIG_PACKAGE_luci-app-store=y"
+        check "^CONFIG_PACKAGE_luci-compat=y"
+        check "^CONFIG_PACKAGE_honk=y"
+        check "^CONFIG_PACKAGE_luci-app-honk=y"
+        check "^CONFIG_PACKAGE_luci-lib-daeuniverse=y"
+        check "^CONFIG_PACKAGE_vmlinux-btf-builtin=y"
+        check "^CONFIG_PACKAGE_kmod-sched-bpf=y"
+        check "^CONFIG_PACKAGE_kmod-nft-queue=y"
+        check "^CONFIG_PACKAGE_kmod-nfnetlink-queue=y"
+        check "^CONFIG_PACKAGE_libstdcpp=y"
+        check "^CONFIG_PACKAGE_v2ray-geoip=y"
+        check "^CONFIG_KERNEL_CGROUPS=y"
+        # blob 版 vmlinux-btf 必须由 daeuniverse 的 SDK 流水线喂预编译 BTF 才有内容,
+        # 而且锁死官方内核 vermagic; 我们是自编译内核且自带 BTF, 它一旦被依赖解析
+        # 拉起来, make 会在它的 Build/Prepare 直接失败
+        if grep -q "^CONFIG_PACKAGE_vmlinux-btf=y" .config; then
+          echo "FAIL: blob 版 vmlinux-btf 被选中了 (应该只用 vmlinux-btf-builtin)"; fail=1
+        else
+          echo "OK: 未选中 blob 版 vmlinux-btf"
+        fi
+        # 中文翻译包名由 luci.mk 按 luci-lib-daeuniverse 推导, 改名不影响编译, 只提示
+        for p in luci-i18n-daeuniverse-zh-cn luci-i18n-daeuniverse-zh-tw; do
+          grep -q "^CONFIG_PACKAGE_${p}=y" .config && echo "OK: $p" || echo "WARN: $p 没进配置 (feed 改了翻译包名?)"
+        done
+        
+        if [ "$fail" -ne 0 ]; then echo "ERROR: defconfig 后关键配置丢失"; exit 1; fi
+        echo "所有关键配置校验通过"
+
+    - name: 安装 honk 需要的 Rust 工具链与 bpf-linker
+      run: |
+        set -euo pipefail
+        cd openwrt
+        SRC=feeds/daeuniverse/honk/src
+        # 版本全部从 honk 源码里的 pin 文件现读, 不在本文件写死:
+        # 改 honk-diy-part2.sh 的 HONK_TAG, 这里的工具链/bpf-linker/doona 版本自动跟着换
+        RUST_STABLE=$(sed -n 's/^channel *= *"\([^"]*\)".*/\1/p' "$SRC/rust-toolchain.toml" | head -1)
+        RUST_EBPF=$(sed -n 's/^channel *= *"\([^"]*\)".*/\1/p' "$SRC/crates/honk-ebpf/rust-toolchain.toml" | head -1)
+        # shellcheck disable=SC1091
+        . "$SRC/.github/ci/pins.env"
+        : "${BPF_LINKER_VERSION:?pins.env 里没有 BPF_LINKER_VERSION}"
+        : "${BPF_LINKER_SHA256:?pins.env 里没有 BPF_LINKER_SHA256}"
+        echo "honk 工具链: stable ${RUST_STABLE:-?} / eBPF ${RUST_EBPF:-?} / bpf-linker $BPF_LINKER_VERSION / doona ${DOONA_VERSION:-?}"
+
+        # runner 自带的 rustup 在 /usr/local 下, 当前用户写不进去, 给自己装一套
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+        export CARGO_HOME="$HOME/.cargo" RUSTUP_HOME="$HOME/.rustup" PATH="$HOME/.cargo/bin:$PATH"
+        echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
+
+        # stable 编 honk-core (带 musl 交叉 std), nightly 只用于编 eBPF 对象
+        rustup toolchain install "$RUST_STABLE" --profile minimal --target "$HONK_RUST_TARGET" --no-self-update
+        rustup toolchain install "$RUST_EBPF" --profile minimal --component rust-src --component llvm-tools --no-self-update
+
+        curl -fsSL --retry 3 -o "$RUNNER_TEMP/bpf-linker.tar.zst" \
+          "https://github.com/aya-rs/bpf-linker/releases/download/v${BPF_LINKER_VERSION}/bpf-linker-x86_64-unknown-linux-musl.tar.zst"
+        echo "${BPF_LINKER_SHA256}  $RUNNER_TEMP/bpf-linker.tar.zst" | sha256sum -c -
+        zstd -dc "$RUNNER_TEMP/bpf-linker.tar.zst" | tar -xf - -C "$CARGO_HOME/bin"
+
+        # OpenWrt 的 rules.mk 会用 TARGET_PATH 重写包编译阶段的 PATH, 软链到
+        # /usr/local/bin 兜底, 再用不带继承环境的路径实测一次, 免得两小时后才发现
+        sudo ln -sf "$CARGO_HOME"/{cargo,rustc,rustup,bpf-linker} /usr/local/bin/
+        env -i HOME="$HOME" PATH=/usr/local/bin:/usr/bin:/bin \
+          sh -c 'cargo --version && rustc --version && bpf-linker --version && rustup toolchain list'
+        df -h
+
+    - name: 下载源码包 (make download)
+      run: |
+        cd openwrt
+        make download -j$(nproc)
+        find dl -size -1024c -exec ls -l {} \;
+        find dl -size -1024c -exec rm -f {} \;
+
+    - name: 编译固件
+      run: |
+        cd openwrt
+        echo -e "$(nproc) thread compile"
+        make -j$(($(nproc)+1)) || make -j1 V=s
+        echo "BUILD_STATUS=success" >> $GITHUB_ENV
+
+    - name: 整理固件
+      if: env.BUILD_STATUS == 'success'
+      run: |
+        cd openwrt
+        mkdir -p ../firmware
+        # 保留 Tenda BE12 Pro 相关固件 + honk 及其 LuCI/依赖包
+        find bin/targets/mediatek/filogic/ -type f \( -name "*tenda_be12-pro*" -o -name "*.manifest" -o -name "config.buildinfo" \) -exec cp -v {} ../firmware/ \;
+        find bin/packages/ -type f \( -name "honk_*" -o -name "luci-app-honk*" -o \
+        -name "luci-lib-daeuniverse*" -o -name "luci-i18n-daeuniverse*" -o -name "vmlinux-btf*" -o -name "v2ray-geo*" \) 2>/dev/null -exec cp -v {} ../firmware/ \; || true
+        ls -lh ../firmware/
+
+    - name: 上传固件到 Artifact
+      uses: actions/upload-artifact@v4
+      if: env.BUILD_STATUS == 'success'
+      with:
+        name: fanchmwrt-tenda-be12-pro-honk
+        path: firmware/*
+
+    - name: 发布到 Release
+      if: env.BUILD_STATUS == 'success'
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ needs.check.outputs.tag }}
+        name: Tenda BE12 Pro + honk ${{ needs.check.outputs.tag }} (内置 honk + doona)
+        target_commitish: ${{ github.sha }}
+        files: firmware/*
+        body: |
+          Tenda BE12 Pro 一体固件, 基于 fanchmwrt-snapshot 26.05, 内置 honk (eBPF 透明代理引擎, dae 的同门续作) + doona 网页面板, 开箱即用。
+
+          启用方式: LuCI 里 Services → honk 打开开关, 面板在 http://192.168.1.3:9527/ (用 IP 访问, honk 不认主机名), 首次进入创建管理员账号。
+
+          上游同步: fanchmwrt/fanchmwrt-snapshot@${{ needs.check.outputs.upstream }}
