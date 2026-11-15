@@ -105,6 +105,16 @@ jobs:
         chmod +x $DIY_P2_SH
         cd openwrt
         ../$DIY_P2_SH
+        # host go 版本硬校验: dae 上游 2026-10-30 起 go.mod 要求 go >= 1.27,
+        # 这里不卡的话要等 make 跑到 dae 才炸, 那时已经白跑两小时
+        GO_VER=$(sed -n 's/^PKG_BUILD_DEPENDS:=golang\([0-9.]*\)\/host.*/\1/p' feeds/daede/dae/Makefile | head -1)
+        [ -n "$GO_VER" ] || GO_VER=$(sed -n 's/^GO_DEFAULT_VERSION:=\(1\.[0-9]*\)$/\1/p' feeds/packages/lang/golang/golang-values.mk | head -1)
+        case "$GO_VER" in
+          1.2[7-9]*|1.[3-9][0-9]*) ;;
+          *) echo "ERROR: host go ${GO_VER:-未知} < 1.27, dae 会报 go.mod requires go >= 1.27.0"; exit 1 ;;
+        esac
+        [ -e "package/feeds/packages/golang$GO_VER" ] || { echo "ERROR: golang$GO_VER 没注册到 package/feeds/packages"; exit 1; }
+        echo "OK: dae/daed 使用 host go $GO_VER"
         rm -f .config
         cp ../$CONFIG_FILE .config
         make defconfig
