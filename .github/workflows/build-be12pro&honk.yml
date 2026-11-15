@@ -194,7 +194,7 @@ jobs:
 
         # OpenWrt 的 rules.mk 会用 TARGET_PATH 重写包编译阶段的 PATH, 软链到
         # /usr/local/bin 兜底, 再用不带继承环境的路径实测一次, 免得两小时后才发现
-        sudo ln -sf "$CARGO_HOME"/{cargo,rustc,rustup,bpf-linker} /usr/local/bin/
+        sudo ln -sf "$CARGO_HOME"/bin/{cargo,rustc,rustup,bpf-linker} /usr/local/bin/
         env -i HOME="$HOME" PATH=/usr/local/bin:/usr/bin:/bin \
           sh -c 'cargo --version && rustc --version && bpf-linker --version && rustup toolchain list'
         df -h
