@@ -105,12 +105,6 @@ fi
 #    钉在一个只有 golang1.26 的提交上, 且 feed 的 golang-package.mk 写死
 #    GOTOOLCHAIN=local (不允许 go 命令自己下工具链), 编译必报:
 #      go: go.mod requires go >= 1.27.0 (running go 1.26.3; GOTOOLCHAIN=local)
-#    修法: 把 openwrt/packages master 的 golang1.27 包定义拷进 feed (与 feed 自带
-#    的 golang1.26 同构, 复用同一套 ../golang-*.mk, 引导仍用 feed 的 golang-bootstrap
-#    1.24.13, Go 1.27 只要求 >= 1.24.6), 再让 dae/daed 显式依赖 golang1.27/host。
-#    feed 若哪天自带 1.27 或默认版本升级, 下面整段自动跳过。
-#    dae 以后要求 1.28 时: 在仓库根目录放 golang1.28-Makefile (从 openwrt/packages
-#    取对应 Makefile), 并把下面的 GO_WANT 改成 1.28。
 GO_WANT=1.27
 GO_FEED_DIR=feeds/packages/lang/golang
 GO_SRC_FILE="../golang$GO_WANT-Makefile"
