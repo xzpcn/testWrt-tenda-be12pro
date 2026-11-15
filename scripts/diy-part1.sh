@@ -16,12 +16,6 @@ if ! grep -q "openwrt-daede" feeds.conf.default; then
   echo 'src-git daede https://github.com/kenzok8/openwrt-daede.git' >> feeds.conf.default
 fi
 
-# golang 版本问题不在这里动: github.com/golang/go 是 go 语言本身, 里面没有
-# lang/golang (openwrt 的 golang 包定义在 openwrt/packages feed), 早先的 clone
-# 一直是 cp: cannot stat ... No such file or directory, 属于空转。
-# dae 需要的 go 1.27 由 diy-part2.sh 第 5 段处理 (那时 feeds 已经 update/install
-# 完, 注入 feeds/packages/lang/golang/ 才不会被 feeds update 覆盖掉)。
-
 # 3. 针对“单体插件仓库”temp-status，不采用 feeds 源机制，直接 git clone 丢进本地 package 目录
 # 这样能完全避开 feeds.conf.default 的语法解析，且百分之百能被编译识别
 mkdir -p package/custom
