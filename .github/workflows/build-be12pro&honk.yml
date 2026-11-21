@@ -8,10 +8,8 @@ on:
     - cron: '20 0 * * *'
 
 env:
-#  REPO_URL: https://github.com/fanchmwrt/fanchmwrt-snapshot.git
-  REPO_URL: https://github.com/fanchmwrt/fanchmwrt
-  REPO_BRANCH: fanchmwrt-25.12.6
-#  REPO_BRANCH: fanchmwrt-26.05
+  REPO_URL: https://github.com/fanchmwrt/fanchmwrt-snapshot.git
+  REPO_BRANCH: fanchmwrt-26.05
   
   CONFIG_FILE: config/tenda-be12-pro-honk.config
   DIY_P1_SH: scripts/honk-diy-part1.sh
